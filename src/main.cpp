@@ -17,11 +17,35 @@
 #include "sensesp/signalk/signalk_output.h"
 #include "sensesp/system/lambda_consumer.h"
 #include "sensesp_app_builder.h"
+#include <Arduino.h>
+#define RS485_TX 25
+#define RS485_RX 33
+#define RS485_EN 5
+HardwareSerial mod(1);
+
+
+std::shared_ptr<sensesp::SKOutput<float>> wind_direction_sk_output;
+std::shared_ptr<sensesp::SKOutput<float>> wind_speed_sk_output;
+
+
+
+
+
+
+
 
 using namespace sensesp;
 
 // The setup function performs one-time application initialization.
 void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  Serial.println("Modbus Test Ready");
+  mod.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
+  pinMode(RS485_EN, OUTPUT);
+  digitalWrite(RS485_EN, LOW);
+
+
   SetupLogging(ESP_LOG_DEBUG);
 
   // Construct the global SensESPApp() object
@@ -134,6 +158,21 @@ void setup() {
 
   digital_input2->connect_to(di2_sk_output);
 
+wind_direction_sk_output = std::make_shared<sensesp::SKOutput<float>>(
+    "environment.wind.directionApparent", 
+    "/Environment/Wind/DirectionApparent"
+);
+
+wind_speed_sk_output = std::make_shared<sensesp::SKOutput<float>>(
+    "environment.wind.speedApparent",
+    "/Environment/Wind/SpeedApparent"
+);
+
+
+
+
+
+
   // To avoid garbage collecting all shared pointers created in setup(),
   // loop from here.
   while (true) {
@@ -141,4 +180,75 @@ void setup() {
   }
 }
 
-void loop() { event_loop()->tick(); }
+void decodeAndPrint(uint8_t* data) {
+  uint16_t speedRaw = (data[0] << 8) | data[1];
+  uint16_t directionRaw = (data[4] << 8) | data[5];
+
+  float speedMps = speedRaw / 10.0;
+  float speedKnots = speedMps * 1.94384;
+
+  float directionDeg = directionRaw / 10.0;
+  float reversedDirectionDeg = fmod((360.0 - directionDeg), 360.0);
+  if (reversedDirectionDeg < 0) reversedDirectionDeg += 360.0;
+
+  // ✅ This is the log you want to match
+  Serial.print("Wind Speed: ");
+ // Serial.print(speedMps);
+ // Serial.print(" m/s (");
+  Serial.print(speedKnots);
+  Serial.println(" knots)");
+
+  Serial.print("Wind Direction (reversed): ");
+  Serial.print(reversedDirectionDeg);
+  Serial.println(" degrees");
+
+  Serial.println();
+
+  // ✅ SEND EXACTLY THESE VALUES TO SK — no conversion, no filtering
+  if (wind_speed_sk_output) wind_speed_sk_output->set_input(speedMps);
+  if (wind_direction_sk_output) wind_direction_sk_output->set_input(reversedDirectionDeg);
+}
+
+
+
+void loop() { 
+
+  uint8_t request[] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x04, 0x44, 0x09};
+  digitalWrite(RS485_EN, HIGH);
+  delay(10);
+  mod.write(request, sizeof(request));
+  mod.flush();
+  delay(10);
+  digitalWrite(RS485_EN, LOW);
+  delay(100);
+  uint8_t response[20];
+  int index = 0;
+  unsigned long startTime = millis();
+  while ((millis() - startTime) < 500) {
+    if (mod.available()) {
+      response[index++] = mod.read();
+      if (index >= sizeof(response)) break;
+    }
+  }
+
+Serial.print("Raw Modbus response: ");
+for (int i = 0; i < index; i++) {
+  Serial.printf("%02X ", response[i]);
+}
+Serial.println();
+
+
+
+
+  if (index >= 11) {
+    decodeAndPrint(&response[3]);
+  } else {
+    Serial.println("No valid response");
+  }
+  
+
+
+  event_loop()->tick(); 
+
+
+}
