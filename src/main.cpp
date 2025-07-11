@@ -8,11 +8,21 @@
 #include "sensesp/system/lambda_consumer.h"
 #include "sensesp_app_builder.h"
 
-#define RS485_TX 25
-#define RS485_RX 33
-#define RS485_EN 5
 
-HardwareSerial mod(1);
+//Max485 Versio
+// #define RS485_TX 25
+// #define RS485_RX 33
+// #define RS485_EN 5
+// HardwareSerial mod(1);
+
+
+//Max3485 Version
+#define RS485_TX 17    // GPIO17 → MAX3485 RXD
+#define RS485_RX 16    // GPIO16 ← MAX3485 TXD
+#define RS485_EN 5     // GPIO5 → MAX3485 DE/RE
+HardwareSerial mod(2);
+
+
 
 std::shared_ptr<sensesp::SKOutput<float>> wind_direction_sk_output;
 std::shared_ptr<sensesp::SKOutput<float>> wind_speed_sk_output;
