@@ -7,6 +7,24 @@
 #include "sensesp/signalk/signalk_output.h"
 #include "sensesp/system/lambda_consumer.h"
 #include "sensesp_app_builder.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+
+
+//Define the size of the screen
+#define LCD_WIDTH  135
+#define LCD_HEIGHT 240
+
+//Define the pins of the ESP32 connected to the LCD
+#define LCD_MOSI 23  // SDA Pin on ESP32 D23
+#define LCD_SCLK 18  // SCL Pin on ESP32 D18
+#define LCD_CS   15  // Chip select control pin on ESP32 D15
+#define LCD_DC    2  // Data Command control pin on ESP32 D2
+#define LCD_RST   4  // Reset pin (could connect to RST pin) on ESP32 D4
+#define LCD_BLK   32  // Black Light Pin on ESP32 D32
+
+//Create the Adafruit_ST7789 object
+Adafruit_ST7789 tft = Adafruit_ST7789(LCD_CS, LCD_DC, LCD_RST);
 
 
 //Max485 Versio
@@ -70,11 +88,42 @@ void decodeAndPrint(uint8_t* data) {
   Serial.println(" degrees");
   Serial.println();
 
+  tft.init(135, 240);            // 1.14" display is 135x240
+  tft.setRotation(1);            // Adjust rotation as needed (try 0–3)
+  tft.fillScreen(ST77XX_BLACK); // Clear screen
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(0, 0);
+  tft.print("Wind: ");
+  tft.print(speedKnots);
+  tft.print(" knots");
+  tft.setCursor(0, 30);  // 👈 move down ~20px (depends on text size)
+  tft.print("Dir: ");
+  tft.print(reversedDirectionDeg);
+  tft.println(" deg");
+
+  pinMode(5, OUTPUT);
+  digitalWrite(5, HIGH);
+  
+
   if (wind_speed_sk_output) wind_speed_sk_output->set_input(speedMps);
   if (wind_direction_sk_output) wind_direction_sk_output->set_input(reversedDirectionDeg);
 }
 
 void setup() {
+
+  tft.init(135, 240);            // 1.14" display is 135x240
+tft.setRotation(1);            // Adjust rotation as needed (try 0–3)
+tft.fillScreen(ST77XX_BLACK); // Clear screen
+tft.setTextColor(ST77XX_WHITE);
+tft.setTextSize(2);
+tft.setCursor(10, 10);
+tft.println("Display OK");
+pinMode(5, OUTPUT);
+digitalWrite(5, HIGH);
+
+
+
   Serial.begin(115200);
   delay(2000);
   Serial.println("Modbus Test Ready");
@@ -205,6 +254,9 @@ void loop() {
   } else {
     Serial.println("No valid response");
   }
+
+
+
 
   event_loop()->tick();
 }
