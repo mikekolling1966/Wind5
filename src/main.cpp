@@ -10,38 +10,27 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 
-
-//Define the size of the screen
+// Define the size of the screen
 #define LCD_WIDTH  135
 #define LCD_HEIGHT 240
 
-//Define the pins of the ESP32 connected to the LCD
-#define LCD_MOSI 23  // SDA Pin on ESP32 D23
-#define LCD_SCLK 18  // SCL Pin on ESP32 D18
-#define LCD_CS   15  // Chip select control pin on ESP32 D15
-#define LCD_DC    2  // Data Command control pin on ESP32 D2
-#define LCD_RST   4  // Reset pin (could connect to RST pin) on ESP32 D4
-#define LCD_BLK   32  // Black Light Pin on ESP32 D32
+// Define the pins of the ESP32 connected to the LCD
+#define LCD_MOSI 23
+#define LCD_SCLK 18
+#define LCD_CS   15
+#define LCD_DC    2
+#define LCD_RST   4
+#define LCD_BLK   32
 
-//Create the Adafruit_ST7789 object
 Adafruit_ST7789 tft = Adafruit_ST7789(LCD_CS, LCD_DC, LCD_RST);
 
-
-//Max485 Versio
-// #define RS485_TX 25
-// #define RS485_RX 33
-// #define RS485_EN 5
-// HardwareSerial mod(1);
-
-
-//Max3485 Version
-#define RS485_TX 17    // GPIO17 → MAX3485 RXD
-#define RS485_RX 16    // GPIO16 ← MAX3485 TXD
-#define RS485_EN 5     // GPIO5 → MAX3485 DE/RE
+// Max3485 Version
+#define RS485_TX 17
+#define RS485_RX 16
+#define RS485_EN 5
 HardwareSerial mod(2);
 
-
-
+// Shared Signal K outputs
 std::shared_ptr<sensesp::SKOutput<float>> wind_direction_sk_output;
 std::shared_ptr<sensesp::SKOutput<float>> wind_speed_sk_output;
 
@@ -72,8 +61,8 @@ void decodeAndPrint(uint8_t* data) {
   float directionDeg = directionRaw / 10.0;
   float reversedDirectionDeg = fmod((360.0 - directionDeg), 360.0);
   if (reversedDirectionDeg < 0) reversedDirectionDeg += 360.0;
+  float directionRad = reversedDirectionDeg * (PI / 180.0);  // ✅ Convert to radians
 
-  // Filter out invalid values
   if (speedMps <= 0.0 || reversedDirectionDeg < 0.0 || reversedDirectionDeg > 360.0) {
     Serial.println("Filtered out invalid wind data");
     return;
@@ -81,48 +70,50 @@ void decodeAndPrint(uint8_t* data) {
 
   Serial.print("Wind Speed: ");
   Serial.print(speedKnots);
-  Serial.println(" knots)");
+  Serial.println(" knots");
 
   Serial.print("Wind Direction (reversed): ");
   Serial.print(reversedDirectionDeg);
-  Serial.println(" degrees");
+  Serial.print(" degrees, ");
+  Serial.print(directionRad);
+  Serial.println(" radians");
   Serial.println();
 
-  tft.init(135, 240);            // 1.14" display is 135x240
-  tft.setRotation(1);            // Adjust rotation as needed (try 0–3)
-  tft.fillScreen(ST77XX_BLACK); // Clear screen
+  tft.init(135, 240);
+  tft.setRotation(1);
+  tft.fillScreen(ST77XX_BLACK);
   tft.setTextColor(ST77XX_WHITE);
   tft.setTextSize(2);
   tft.setCursor(0, 0);
   tft.print("Wind: ");
   tft.print(speedKnots);
   tft.print(" knots");
-  tft.setCursor(0, 30);  // 👈 move down ~20px (depends on text size)
+  tft.setCursor(0, 30);
   tft.print("Dir: ");
   tft.print(reversedDirectionDeg);
   tft.println(" deg");
+  tft.setCursor(0, 60);
+  tft.print("Dir: ");
+  tft.print(directionRad, 2);
+  tft.println(" rad");
 
   pinMode(5, OUTPUT);
   digitalWrite(5, HIGH);
-  
 
   if (wind_speed_sk_output) wind_speed_sk_output->set_input(speedMps);
-  if (wind_direction_sk_output) wind_direction_sk_output->set_input(reversedDirectionDeg);
+  if (wind_direction_sk_output) wind_direction_sk_output->set_input(directionRad);  // ✅ Send radians
 }
 
 void setup() {
-
-  tft.init(135, 240);            // 1.14" display is 135x240
-tft.setRotation(1);            // Adjust rotation as needed (try 0–3)
-tft.fillScreen(ST77XX_BLACK); // Clear screen
-tft.setTextColor(ST77XX_WHITE);
-tft.setTextSize(2);
-tft.setCursor(10, 10);
-tft.println("Display OK");
-pinMode(5, OUTPUT);
-digitalWrite(5, HIGH);
-
-
+  tft.init(135, 240);
+  tft.setRotation(1);
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.println("Display OK");
+  pinMode(5, OUTPUT);
+  digitalWrite(5, HIGH);
 
   Serial.begin(115200);
   delay(2000);
@@ -202,14 +193,20 @@ digitalWrite(5, HIGH);
 
   digital_input2->connect_to(di2_sk_output);
 
+  // ✅ Set metadata for wind direction (radians)
+  auto wind_dir_metadata = std::make_shared<SKMetadata>("rad", "Wind direction (reversed, in radians)");
   wind_direction_sk_output = std::make_shared<SKOutput<float>>(
-      "environment.wind.directionApparent",
-      "/Environment/Wind/DirectionApparent"
+      "environment.wind.angleApparent",
+      "/Environment/Wind/DirectionApparent",
+      wind_dir_metadata
   );
 
+  // ✅ Set metadata for wind speed (m/s)
+  auto wind_speed_metadata = std::make_shared<SKMetadata>("m/s", "Wind speed (apparent, in meters per second)");
   wind_speed_sk_output = std::make_shared<SKOutput<float>>(
       "environment.wind.speedApparent",
-      "/Environment/Wind/SpeedApparent"
+      "/Environment/Wind/SpeedApparent",
+      wind_speed_metadata
   );
 
   while (true) {
@@ -254,9 +251,6 @@ void loop() {
   } else {
     Serial.println("No valid response");
   }
-
-
-
 
   event_loop()->tick();
 }
